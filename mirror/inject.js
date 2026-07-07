@@ -76,11 +76,26 @@
     st.cart[id] = (st.cart[id] || 0) + 1;
     try { localStorage.setItem(STATE_KEY, JSON.stringify(st)); } catch (e) {}
     updateBar(st);
+    syncStoreCart(st);
     toast('🛒 Added to A to Zero — <strong>' + escapeHtml(p.name.slice(0, 60)) + '</strong><br><span style="opacity:.85">' +
       (p.price > 0 ? money(p.price) + " kept in your pocket." : "$0.00 spent.") + '</span>');
   }
 
   function cartCount(st) { st = st || loadState(); var n = 0; for (var k in st.cart) n += st.cart[k]; return n; }
+
+  // Make the store's OWN top-bar cart badge show the A to Zero pretend count,
+  // so the familiar cart icon ticks up as you add. Amazon re-renders its nav
+  // on its own, so re-apply periodically to keep our number.
+  function syncStoreCart(st) {
+    var n = cartCount(st);
+    var els = document.querySelectorAll(
+      "#nav-cart-count,.nav-cart-count,#nav-cart-count-container,#sw-gtc .a-size-large,[data-cart-count]");
+    for (var i = 0; i < els.length; i++) {
+      els[i].textContent = n;
+      var a = els[i].closest && els[i].closest("#nav-cart");
+      if (a) a.setAttribute("aria-label", n + " items in cart");
+    }
+  }
 
   /* ---------- intercepting real store actions ---------- */
   function openCart() { location.href = "/__a2z/#/cart"; }
@@ -223,6 +238,9 @@
   // Bounce off any real cart/checkout/sign-in page before drawing anything.
   if (guardPath()) return;
 
-  if (document.body) buildBar();
-  else document.addEventListener("DOMContentLoaded", buildBar);
+  function boot() { buildBar(); syncStoreCart(); }
+  if (document.body) boot();
+  else document.addEventListener("DOMContentLoaded", boot);
+  // The store rebuilds its nav asynchronously — keep our count applied.
+  setInterval(function () { try { syncStoreCart(); } catch (e) {} }, 1500);
 })();

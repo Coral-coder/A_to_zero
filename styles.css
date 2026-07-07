@@ -108,8 +108,9 @@ a:hover { text-decoration: underline; }
   border: 1px solid transparent; border-radius: 3px; white-space: nowrap;
 }
 .strip-link:hover { border-color: #fff; text-decoration: none; }
-.strip-store { background: var(--accent); color: var(--header) !important; font-weight: 700; }
-.strip-store:hover { background: var(--accent-dark); border-color: transparent; }
+
+/* Under the store mirror, Amazon's own nav is the menu — hide our row. */
+.under-mirror .header-sub { display: none; }
 
 .savings-pill {
   background: #1d3a2a; color: #7fe0a7; border: 1px solid #2e5c42;

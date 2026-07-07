@@ -397,9 +397,10 @@ function buildCategoryUI() {
     o.value = c.id; o.textContent = c.name;
     sel.appendChild(o);
   });
+  // Under the mirror, Amazon's own top nav is the menu — hide our category
+  // row entirely (see the .under-mirror rule in styles.css).
   $("#category-strip").innerHTML =
-    (UNDER_MIRROR ? `<a href="/" class="strip-link strip-store">🔙 Back to the store</a>` : "") +
-    `<a href="#/" class="strip-link">🏠 ${UNDER_MIRROR ? "A to Zero" : "Home"}</a>` +
+    `<a href="#/" class="strip-link">🏠 Home</a>` +
     CATEGORIES.map((c) => `<a href="#/category/${c.id}" class="strip-link">${c.emoji} ${esc(c.name)}</a>`).join("") +
     `<a href="#/orders" class="strip-link">🚚 Track Orders</a>` +
     `<a href="#/add" class="strip-link">➕ Add Any Product</a>`;
@@ -837,7 +838,9 @@ window.addEventListener("hashchange", () => { render(); window.scrollTo(0, 0); }
 
 /* ---------- boot ---------- */
 if (UNDER_MIRROR) {
-  // The logo takes you back to the real (mirrored) store, not the fake home.
+  // Amazon's own top bar is the menu; hide our category row, and make the
+  // logo take you back to the real (mirrored) store instead of the fake home.
+  document.body.classList.add("under-mirror");
   const logo = document.querySelector(".logo");
   if (logo) logo.setAttribute("href", "/");
 }

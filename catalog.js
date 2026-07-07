@@ -1,7 +1,8 @@
-// A to Zero — product catalog
-// All products are fictional. Prices are for entertainment only.
+// A to Zero — built-in fallback catalog.
+// Used only when the live product API is unreachable (fully offline use).
+// All products here are fictional. Prices are for entertainment only.
 
-const CATEGORIES = [
+const BUILTIN_CATEGORIES = [
   { id: "electronics", name: "Electronics", emoji: "🎧" },
   { id: "home",        name: "Home & Kitchen", emoji: "🏠" },
   { id: "books",       name: "Books", emoji: "📚" },
@@ -12,7 +13,7 @@ const CATEGORIES = [
   { id: "pets",        name: "Pet Supplies", emoji: "🐾" },
 ];
 
-const PRODUCTS = [
+const BUILTIN_PRODUCTS = [
   // Electronics
   { id: "p001", cat: "electronics", emoji: "🎧", name: "SoundNimbus Pro Wireless Noise-Cancelling Headphones — Over-Ear, 40h Battery, Midnight Black",
     price: 279.99, was: 349.99, rating: 4.7, reviews: 48213, prime: true,

@@ -23,6 +23,174 @@ const MILESTONES = [
   { at: 1.00, key: "delivered", label: "Delivered",                 icon: "🏡", detail: "Your package has arrived. Go open it in My Stuff!" },
 ];
 
+/* ---------- catalog: live real products, built-in fallback ---------- */
+/* The live catalog comes from DummyJSON (https://dummyjson.com) — ~200 real
+   products with real photos, no API key. It's fetched client-side in YOUR
+   browser and cached locally; when unreachable, the built-in catalog loads. */
+let PRODUCTS = BUILTIN_PRODUCTS;
+let CATEGORIES = BUILTIN_CATEGORIES;
+
+const CATALOG_CACHE_KEY = "a2z-live-catalog-v2";
+
+const CAT_META = {
+  "beauty":              { name: "Beauty", emoji: "💄" },
+  "fragrances":          { name: "Fragrances", emoji: "🌸" },
+  "furniture":           { name: "Furniture", emoji: "🛋️" },
+  "groceries":           { name: "Groceries", emoji: "🛒" },
+  "home-decoration":     { name: "Home Decoration", emoji: "🖼️" },
+  "kitchen-accessories": { name: "Kitchen", emoji: "🍳" },
+  "laptops":             { name: "Laptops", emoji: "💻" },
+  "mens-shirts":         { name: "Men's Shirts", emoji: "👔" },
+  "mens-shoes":          { name: "Men's Shoes", emoji: "👞" },
+  "mens-watches":        { name: "Men's Watches", emoji: "⌚" },
+  "mobile-accessories":  { name: "Mobile Accessories", emoji: "🔌" },
+  "motorcycle":          { name: "Motorcycle", emoji: "🏍️" },
+  "skin-care":           { name: "Skin Care", emoji: "🧴" },
+  "smartphones":         { name: "Smartphones", emoji: "📱" },
+  "sports-accessories":  { name: "Sports", emoji: "🏀" },
+  "sunglasses":          { name: "Sunglasses", emoji: "🕶️" },
+  "tablets":             { name: "Tablets", emoji: "📲" },
+  "tops":                { name: "Tops", emoji: "👚" },
+  "vehicle":             { name: "Vehicles", emoji: "🚗" },
+  "womens-bags":         { name: "Women's Bags", emoji: "👜" },
+  "womens-dresses":      { name: "Women's Dresses", emoji: "👗" },
+  "womens-jewellery":    { name: "Women's Jewellery", emoji: "💍" },
+  "womens-shoes":        { name: "Women's Shoes", emoji: "👠" },
+  "womens-watches":      { name: "Women's Watches", emoji: "⌚" },
+};
+const catMeta = (id) => CAT_META[id] || {
+  name: id.replace(/-/g, " ").replace(/\b\w/g, (c) => c.toUpperCase()),
+  emoji: "🛍️",
+};
+
+/* Deterministic pseudo-numbers from a string (stable fake prices/ratings
+   for sources that don't publish prices) */
+function hashNum(str) {
+  let h = 2166136261;
+  for (let i = 0; i < str.length; i++) { h ^= str.charCodeAt(i); h = Math.imul(h, 16777619); }
+  return Math.abs(h);
+}
+
+function mapDummyJson(d) {
+  return {
+    id: "d" + d.id,
+    cat: d.category,
+    store: "A2Z Warehouse",
+    emoji: catMeta(d.category).emoji,
+    img: d.thumbnail || (d.images && d.images[0]) || null,
+    name: d.brand && !d.title.toLowerCase().includes(d.brand.toLowerCase())
+      ? `${d.brand} ${d.title}` : d.title,
+    price: d.price,
+    was: d.discountPercentage > 1 ? +(d.price / (1 - d.discountPercentage / 100)).toFixed(2) : null,
+    rating: d.rating || 4,
+    reviews: 500 + (d.id * 7919) % 48000, // deterministic pretend crowd
+    prime: (d.rating || 0) >= 4,
+    blurb: d.description || "",
+    bullets: [
+      d.brand ? `Brand: ${d.brand}` : null,
+      d.warrantyInformation ? `Warranty: ${d.warrantyInformation}` : null,
+      d.shippingInformation ? `Shipping: ${d.shippingInformation}` : null,
+      d.returnPolicy ? `Returns: ${d.returnPolicy}` : null,
+      d.availabilityStatus ? `Availability: ${d.availabilityStatus}` : null,
+    ].filter(Boolean),
+  };
+}
+
+/* Open Food Facts / Open Beauty Facts: real brand-name products with real
+   photos, but no prices — so we invent stable, plausible ones. */
+function mapOpenFacts(d, { idPrefix, cat, store, priceMin, priceMax }) {
+  const name = [d.brands ? d.brands.split(",")[0].trim() : "", d.product_name || ""].filter(Boolean).join(" ").trim();
+  if (!name || !d.image_front_url) return null;
+  const h = hashNum(String(d.code));
+  const price = +(priceMin + (h % Math.round((priceMax - priceMin) * 100)) / 100).toFixed(2);
+  const rating = +(3.7 + (h % 13) / 10).toFixed(1);
+  return {
+    id: idPrefix + d.code,
+    cat,
+    store,
+    emoji: catMeta(cat).emoji,
+    img: d.image_front_url,
+    name: d.quantity ? `${name}, ${d.quantity}` : name,
+    price,
+    was: h % 3 === 0 ? +(price * 1.25).toFixed(2) : null,
+    rating,
+    reviews: 100 + h % 9000,
+    prime: rating >= 4.1,
+    blurb: "A real product from the Open " + (idPrefix === "off" ? "Food" : "Beauty") + " Facts community database. The price is invented (nothing here is for sale) — the product is not.",
+    bullets: [
+      d.brands ? `Brand: ${d.brands.split(",")[0].trim()}` : null,
+      d.quantity ? `Size: ${d.quantity}` : null,
+      d.nutriscore_grade && d.nutriscore_grade.match(/^[a-e]$/) ? `Nutri-Score: ${d.nutriscore_grade.toUpperCase()}` : null,
+      "Data: Open " + (idPrefix === "off" ? "Food" : "Beauty") + " Facts (openfoodfacts.org)",
+    ].filter(Boolean),
+  };
+}
+
+/* Each source loads independently — whatever responds gets merged in. */
+const OFF_FIELDS = "code,product_name,brands,image_front_url,quantity,nutriscore_grade";
+const CATALOG_SOURCES = [
+  {
+    name: "A2Z Warehouse (DummyJSON)",
+    url: "https://dummyjson.com/products?limit=0",
+    map: (data) => (data.products || []).map(mapDummyJson),
+  },
+  {
+    name: "Real groceries (Open Food Facts)",
+    url: `https://world.openfoodfacts.org/cgi/search.pl?action=process&json=1&page_size=150&sort_by=unique_scans_n&fields=${OFF_FIELDS}`,
+    map: (data) => (data.products || [])
+      .map((d) => mapOpenFacts(d, { idPrefix: "off", cat: "groceries", store: "World Pantry", priceMin: 0.99, priceMax: 12.99 })),
+  },
+  {
+    name: "Real beauty products (Open Beauty Facts)",
+    url: `https://world.openbeautyfacts.org/cgi/search.pl?action=process&json=1&page_size=100&sort_by=unique_scans_n&fields=${OFF_FIELDS}`,
+    map: (data) => (data.products || [])
+      .map((d) => mapOpenFacts(d, { idPrefix: "obf", cat: "beauty", store: "Glow District", priceMin: 3.99, priceMax: 39.99 })),
+  },
+];
+
+function useCatalog(products, categories) {
+  PRODUCTS = products;
+  CATEGORIES = categories;
+  buildCategoryUI();
+  render();
+}
+
+async function loadLiveCatalog() {
+  // Instant paint from the local cache, then refresh from the network.
+  let hasCatalog = false;
+  try {
+    const cached = JSON.parse(localStorage.getItem(CATALOG_CACHE_KEY));
+    if (cached && cached.products && cached.products.length) {
+      useCatalog(cached.products, cached.categories);
+      hasCatalog = true;
+    }
+  } catch (e) { /* bad cache — ignore */ }
+
+  const results = await Promise.allSettled(
+    CATALOG_SOURCES.map(async (src) => {
+      const res = await fetch(src.url);
+      if (!res.ok) throw new Error(src.name + ": HTTP " + res.status);
+      return src.map(await res.json()).filter(Boolean);
+    })
+  );
+  const products = results.filter((r) => r.status === "fulfilled").flatMap((r) => r.value);
+  const failed = results.filter((r) => r.status === "rejected").length;
+
+  if (products.length) {
+    const categories = [...new Set(products.map((p) => p.cat))]
+      .map((id) => ({ id, name: catMeta(id).name, emoji: catMeta(id).emoji }));
+    try {
+      localStorage.setItem(CATALOG_CACHE_KEY, JSON.stringify({ products, categories, at: Date.now() }));
+    } catch (e) { /* storage full — still usable this session */ }
+    useCatalog(products, categories);
+    if (!hasCatalog) {
+      showToast(`🛍️ Loaded ${products.length.toLocaleString()} real products from ${results.length - failed} source${results.length - failed === 1 ? "" : "s"}.`);
+    }
+  } else if (!hasCatalog) {
+    showToast("📴 Product APIs unreachable — using the built-in demo catalog.");
+  }
+}
+
 /* ---------- state ---------- */
 let state = loadState();
 function loadState() {
@@ -39,6 +207,20 @@ const $ = (sel) => document.querySelector(sel);
 const money = (n) => "$" + n.toFixed(2);
 const productById = (id) => PRODUCTS.find((p) => p.id === id);
 const catById = (id) => CATEGORIES.find((c) => c.id === id);
+
+/* Product art: real photo when we have one, emoji otherwise */
+function prodArt(p, cls = "emoji-art") {
+  return p.img
+    ? `<img class="prod-photo" src="${esc(p.img)}" alt="" loading="lazy">`
+    : `<span class="${cls}">${p.emoji}</span>`;
+}
+
+/* Resolve an order/stuff line to something renderable, even if the
+   catalog changed since purchase (falls back to the stored snapshot). */
+function lineInfo(line) {
+  return productById(line.id) ||
+    { id: line.id, emoji: line.emoji || "📦", img: line.img || null, name: line.name || "A mystery item", price: line.price };
+}
 
 function stars(rating) {
   const full = Math.round(rating);
@@ -133,7 +315,11 @@ function placeOrder(shippingId) {
     placedAt: Date.now(),
     duration: shipping.duration,
     shippingLabel: shipping.label,
-    items: items.map((i) => ({ id: i.product.id, qty: i.qty, price: i.product.price })),
+    items: items.map((i) => ({
+      id: i.product.id, qty: i.qty, price: i.product.price,
+      // snapshot for rendering even if the live catalog changes later
+      name: i.product.name, emoji: i.product.emoji, img: i.product.img || null,
+    })),
     total,
     opened: false,
   };
@@ -186,8 +372,9 @@ function updateHeader() {
   $("#savings-amount").textContent = money(state.saved);
 }
 
-function buildHeaderStatics() {
+function buildCategoryUI() {
   const sel = $("#search-category");
+  sel.innerHTML = `<option value="">All</option>`;
   CATEGORIES.forEach((c) => {
     const o = document.createElement("option");
     o.value = c.id; o.textContent = c.name;
@@ -197,7 +384,10 @@ function buildHeaderStatics() {
     `<a href="#/" class="strip-link">🏠 Home</a>` +
     CATEGORIES.map((c) => `<a href="#/category/${c.id}" class="strip-link">${c.emoji} ${esc(c.name)}</a>`).join("") +
     `<a href="#/orders" class="strip-link">🚚 Track Orders</a>`;
+}
 
+function buildHeaderStatics() {
+  buildCategoryUI();
   const doSearch = () => {
     const q = $("#search-input").value.trim();
     const cat = $("#search-category").value;
@@ -211,7 +401,7 @@ function buildHeaderStatics() {
 function productCard(p) {
   return `
   <div class="card">
-    <a class="card-img" href="#/product/${p.id}"><span class="emoji-art">${p.emoji}</span></a>
+    <a class="card-img" href="#/product/${p.id}">${prodArt(p)}</a>
     <div class="card-body">
       <a class="card-title" href="#/product/${p.id}">${esc(p.name)}</a>
       <div class="card-rating">${stars(p.rating)} <span class="review-count">${p.reviews.toLocaleString()}</span></div>
@@ -276,7 +466,7 @@ function viewProduct(id) {
   return `
   <div class="breadcrumb"><a href="#/">Home</a> › <a href="#/category/${p.cat}">${esc(c.name)}</a></div>
   <div class="product-page">
-    <div class="product-img"><span class="emoji-art xl">${p.emoji}</span></div>
+    <div class="product-img">${prodArt(p, "emoji-art xl")}</div>
     <div class="product-info">
       <h1>${esc(p.name)}</h1>
       <div class="card-rating">${stars(p.rating)} <span class="review-count">${p.reviews.toLocaleString()} ratings</span></div>
@@ -295,6 +485,7 @@ function viewProduct(id) {
       <div class="prime-badge">✓ zero<span>prime</span></div>
       <p class="delivery-line">FREE delivery to <strong>Your Imagination</strong> — as fast as you like.</p>
       <p class="stock">In Stock (infinitely — it's imaginary)</p>
+      ${p.store ? `<p class="fine">Sold by <strong>${esc(p.store)}</strong> · Fulfilled by A to Zero</p>` : ""}
       <button class="btn btn-cart" onclick="addToCart('${p.id}')">Add to Cart</button>
       <button class="btn btn-buy" onclick="addToCart('${p.id}'); location.hash='#/checkout'">Buy Now</button>
       <p class="fine">🔒 Transaction secured by not existing</p>
@@ -315,7 +506,7 @@ function viewCart() {
       <h2>Shopping Cart</h2>
       ${items.map((i) => `
         <div class="cart-row">
-          <a href="#/product/${i.product.id}" class="cart-emoji">${i.product.emoji}</a>
+          <a href="#/product/${i.product.id}" class="cart-emoji">${prodArt(i.product, "")}</a>
           <div class="cart-mid">
             <a class="card-title" href="#/product/${i.product.id}">${esc(i.product.name)}</a>
             <div class="stock small">In Stock — ships from the Cloud of Pure Possibility</div>
@@ -366,7 +557,7 @@ function viewCheckout() {
         </div>
         <div class="panel">
           <h3>4 &nbsp; Review items</h3>
-          ${items.map((i) => `<div class="review-row"><span>${i.product.emoji} ${esc(i.product.name.split("—")[0].trim())} × ${i.qty}</span><span>${money(i.product.price * i.qty)}</span></div>`).join("")}
+          ${items.map((i) => `<div class="review-row"><span>${i.product.img ? "" : i.product.emoji + " "}${esc(i.product.name.split("—")[0].trim())} × ${i.qty}</span><span>${money(i.product.price * i.qty)}</span></div>`).join("")}
         </div>
       </div>
       <div class="checkout-side panel">
@@ -419,8 +610,8 @@ function viewOrders() {
         <div class="order-body">
           <div class="order-status ${delivered ? "delivered" : ""}">${m.icon} <strong>${m.label}</strong> — ${delivered ? "arrived safe and sound" : orderEtaText(o)}</div>
           <div class="order-items">${o.items.map((i) => {
-            const p = productById(i.id);
-            return `<a href="#/product/${p.id}" class="order-item" title="${esc(p.name)}">${p.emoji}<span>× ${i.qty}</span></a>`;
+            const p = lineInfo(i);
+            return `<a href="#/product/${p.id}" class="order-item" title="${esc(p.name)}">${prodArt(p, "")}<span>× ${i.qty}</span></a>`;
           }).join("")}</div>
           <div class="order-actions">
             <a class="btn btn-cart small" href="#/track/${o.id}">${delivered ? "View delivery" : "Track package"}</a>
@@ -478,7 +669,10 @@ function openPackage(orderId) {
   if (!order || order.opened) return;
   order.opened = true;
   for (const i of order.items) {
-    state.stuff.unshift({ id: i.id, qty: i.qty, openedAt: Date.now(), orderNumber: order.number });
+    state.stuff.unshift({
+      id: i.id, qty: i.qty, openedAt: Date.now(), orderNumber: order.number,
+      name: i.name, emoji: i.emoji, img: i.img || null,
+    });
   }
   saveState();
   confetti();
@@ -496,9 +690,9 @@ function viewStuff() {
       <div class="stat"><div class="stat-num">0</div><div class="stat-label">boxes in landfill</div></div>
     </div>
     ${state.stuff.length ? `<div class="grid">${state.stuff.map((s) => {
-      const p = productById(s.id);
+      const p = lineInfo(s);
       return `<div class="card stuff-card">
-        <div class="card-img"><span class="emoji-art">${p.emoji}</span></div>
+        <div class="card-img">${prodArt(p)}</div>
         <div class="card-body">
           <a class="card-title" href="#/product/${p.id}">${esc(p.name.split("—")[0].trim())}</a>
           <div class="muted small">× ${s.qty} · unboxed ${new Date(s.openedAt).toLocaleDateString()}</div>
@@ -557,3 +751,4 @@ window.addEventListener("hashchange", () => { render(); window.scrollTo(0, 0); }
 buildHeaderStatics();
 updateHeader();
 render();
+loadLiveCatalog();

@@ -2,7 +2,7 @@
    Precache the whole app so it works offline / installs to a home screen.
    Bump CACHE_VERSION whenever any shipped file changes. */
 
-const CACHE_VERSION = "a2z-v1";
+const CACHE_VERSION = "a2z-v2";
 const ASSETS = [
   "./",
   "./index.html",

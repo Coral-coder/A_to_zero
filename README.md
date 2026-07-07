@@ -11,9 +11,28 @@ It's built for people working on shopping habits: you get the full ritual and th
 dopamine of the hunt, the purchase, and the wait for delivery, without spending a
 cent or shipping a box you don't need.
 
+## Real products
+
+On load, the app pulls **hundreds of real products with real photos** from free,
+no-key public APIs and merges them into one browsable marketplace:
+
+- **DummyJSON** — ~200 real branded goods (phones, laptops, watches, furniture, fashion…)
+- **Open Food Facts** — real brand-name groceries from the open community database
+- **Open Beauty Facts** — real beauty and care products
+
+Prices for the Open Facts sources are invented (those databases don't carry
+prices — and nothing here is for sale anyway). Every source loads
+independently and is cached in your browser; if you're offline, a built-in
+fictional catalog keeps the app fully usable.
+
+Retailer APIs that require approved keys (Amazon PA-API, Walmart Affiliate,
+AliExpress Affiliate, eBay, Best Buy) are not included — there is no
+legitimate keyless access to those catalogs. If you obtain keys, the
+`CATALOG_SOURCES` list in `app.js` is where a new source plugs in.
+
 ## The full loop
 
-1. **Browse** a catalog of 30+ (entirely fictional) products across 8 categories, with search, deals, ratings, and product pages.
+1. **Browse** the merged catalog across two dozen categories, with search, deals, ratings, and product pages.
 2. **Add to cart** and adjust quantities.
 3. **Check out** with the *Card of Infinite Restraint* (charges $0.00, never expires) — no forms, no passwords, no accounts.
 4. **Choose your delivery speed** — the wait is part of the experience:

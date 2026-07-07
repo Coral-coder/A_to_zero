@@ -153,6 +153,13 @@ a:hover { text-decoration: underline; }
 .emoji-art { font-size: 72px; line-height: 1; filter: drop-shadow(0 6px 8px rgba(0,0,0,.15)); }
 .emoji-art.xl { font-size: 150px; }
 
+/* real product photos (live catalog) */
+.prod-photo { max-width: 100%; max-height: 100%; object-fit: contain; mix-blend-mode: multiply; }
+.card-img .prod-photo { padding: 8px; }
+.product-img .prod-photo { max-height: 420px; }
+.cart-emoji { width: 96px; height: 96px; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
+.order-item .prod-photo { width: 44px; height: 44px; }
+
 .card-body { padding: 12px 14px 14px; display: flex; flex-direction: column; gap: 6px; flex: 1; }
 .card-title {
   color: var(--ink); font-size: 14px; line-height: 1.35;

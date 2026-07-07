@@ -58,11 +58,17 @@ function rewriteHtml(html) {
   // Turn absolute links back to the mirror's own origin so navigation
   // stays inside the proxy instead of jumping to the real site. Cover
   // both the www host and the bare apex (e.g. amazon.com / www.amazon.com).
+  // IMPORTANT: only rewrite inside attribute values (href/src/action/... =),
+  // never a blanket replace — nuking the same host string inside Amazon's
+  // inline JSON bootstrap config throws JS errors and blanks the page.
   const apex = up.host.replace(/^www\./, "");
   const hosts = [up.host, apex, "www." + apex];
-  const variants = [];
-  for (const host of hosts) variants.push("https://" + host, "http://" + host, "//" + host);
-  for (const v of variants) html = html.split(v).join("");
+  const fulls = [];
+  for (const host of hosts) fulls.push("https://" + host, "http://" + host, "//" + host);
+  for (const full of fulls) {
+    html = html.split('="' + full).join('="');
+    html = html.split("='" + full).join("='");
+  }
   // Kill any inline <meta> CSP that would block our injected script.
   html = html.replace(/<meta[^>]+http-equiv=["']?content-security-policy["']?[^>]*>/ig, "");
   const tag = '<script src="/__a2z/inject.js" data-a2z-inject></script>';
@@ -120,9 +126,19 @@ function proxy(req, res) {
       const chunks = [];
       stream.on("data", (c) => chunks.push(c));
       stream.on("end", () => {
+        const raw = Buffer.concat(chunks).toString("utf8");
         let html;
-        try { html = rewriteHtml(Buffer.concat(chunks).toString("utf8")); }
-        catch (e) { html = Buffer.concat(chunks).toString("utf8"); }
+        try { html = rewriteHtml(raw); }
+        catch (e) { html = raw; }
+        // Surface bot-checks / empty bodies in the logs so it's clear when
+        // the store (not the proxy) is the problem.
+        const botCheck = /Robot Check|api-services-support@amazon|To discuss automated access|Enter the characters you see below|captcha/i.test(raw);
+        const flag = botCheck ? " ⚠️ BOT-CHECK/CAPTCHA" : (raw.length < 2000 ? " ⚠️ tiny body" : "");
+        console.log(`[${pres.statusCode}] ${req.method} ${req.url.slice(0, 80)} → html ${raw.length}b${flag}`);
+        if (botCheck) html = html.replace(/<body[^>]*>/i, (m) => m +
+          '<div style="position:fixed;top:0;left:0;right:0;z-index:2147483647;background:#b12704;color:#fff;font:14px Arial;padding:10px 14px;text-align:center">' +
+          '⚠️ The store is showing an anti-bot / CAPTCHA page — this is the retailer blocking proxied traffic, not A to Zero. ' +
+          'Try again, or use the full simulator at <a style="color:#ffd814" href="/__a2z/">/__a2z/</a>.</div>');
         delete h["content-encoding"];
         delete h["transfer-encoding"];
         h["content-length"] = Buffer.byteLength(html);
@@ -136,6 +152,7 @@ function proxy(req, res) {
     }
   });
   preq.on("error", (e) => {
+    console.log(`[ERR] ${req.method} ${req.url.slice(0, 80)} → ${e.code || e.message}`);
     res.writeHead(502, { "content-type": "text/html;charset=utf-8" });
     res.end(offlinePage(e));
   });

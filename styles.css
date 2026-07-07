@@ -359,8 +359,47 @@ a:hover { text-decoration: underline; }
   .checkout-side { position: static; }
 }
 @media (max-width: 640px) {
+  #sim-banner { font-size: 11px; padding: 5px 10px; }
   .deliver-to { display: none; }
-  .hero h1 { font-size: 26px; }
-  .header-row { gap: 8px; }
-  .search-bar { order: 3; min-width: 100%; }
+  .header-row { gap: 8px; padding: 8px 12px; }
+  .logo-text { font-size: 20px; }
+  .search-bar { order: 3; min-width: 100%; height: 38px; }
+  .nav-item { padding: 4px 6px; }
+  .nav-item .line1 { font-size: 11px; }
+  .nav-item .line2 { font-size: 13px; }
+  .header-nav { margin-left: auto; }
+
+  /* category strip becomes one swipeable row */
+  .header-sub { padding: 6px 0 6px 12px; flex-wrap: nowrap; }
+  #category-strip {
+    flex-wrap: nowrap; overflow-x: auto; -webkit-overflow-scrolling: touch;
+    scrollbar-width: none; flex: 1; padding-right: 10px;
+  }
+  #category-strip::-webkit-scrollbar { display: none; }
+  .savings-pill { display: none; }
+
+  #main { padding: 12px; }
+  .hero-inner { padding: 22px 18px; }
+  .hero h1 { font-size: 24px; }
+  .hero p { font-size: 14px; }
+  .section h2 { font-size: 18px; }
+
+  /* two products per row, like a proper shopping app */
+  .grid { grid-template-columns: repeat(2, 1fr); gap: 10px; }
+  .card-img { height: 104px; }
+  .emoji-art { font-size: 52px; }
+  .emoji-art.xl { font-size: 96px; }
+  .card-body { padding: 9px 10px 11px; gap: 4px; }
+  .card-title { font-size: 12.5px; }
+  .price { font-size: 16px; }
+  .btn { padding: 10px 14px; }        /* bigger tap targets */
+  .qty-controls button { width: 38px; height: 38px; }
+
+  .product-page { padding: 16px; gap: 14px; }
+  .product-info h1 { font-size: 18px; }
+  .ty-box { padding: 26px 18px; }
+  .order-head { gap: 16px; }
+  .stat { padding: 12px 14px; min-width: 100px; }
+  .stat-num { font-size: 19px; }
+  .footer-inner { padding: 20px 14px; }
 }

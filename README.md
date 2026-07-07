@@ -36,25 +36,79 @@ has arrived.
 
 ## Running it
 
-It's a fully static site — no build step, no dependencies.
+It's a fully static site — no build step, no dependencies. Pick whichever fits:
+
+### Option 1 — Docker on Windows (recommended)
+
+1. Install [Docker Desktop for Windows](https://www.docker.com/products/docker-desktop/) and start it (whale icon in the system tray).
+2. Get this code onto your machine, e.g. in PowerShell:
+   ```powershell
+   git clone https://github.com/Coral-coder/A_to_zero.git
+   cd A_to_zero
+   ```
+   (Or download the repo as a ZIP from GitHub and unzip it.)
+3. Build and start the container:
+   ```powershell
+   docker compose up -d --build
+   ```
+4. Open **http://localhost:8080** in your browser. Done.
+
+Useful commands:
+
+```powershell
+docker compose down          # stop it
+docker compose up -d         # start it again
+docker compose up -d --build # rebuild after changing files
+docker compose logs -f       # watch the logs
+```
+
+With `restart: unless-stopped` in `compose.yaml`, the container comes back
+automatically whenever Docker Desktop starts.
+
+### Option 2 — no Docker, just open it
+
+Double-click `index.html`, or serve it for nicer URLs:
 
 ```bash
-# Option 1: just open it
-open index.html
-
-# Option 2: serve it (nicer URLs, no file:// quirks)
-python3 -m http.server 8000
-# then visit http://localhost:8000
+python3 -m http.server 8000   # then visit http://localhost:8000
 ```
+
+## Using it on your phone 📱
+
+**From your Windows PC's container (same Wi-Fi):**
+
+1. Find your PC's local IP: run `ipconfig` in PowerShell and look for
+   `IPv4 Address` (something like `192.168.1.42`).
+2. On your phone (same Wi-Fi network), open `http://192.168.1.42:8080`.
+3. If it doesn't load, Windows Firewall is likely blocking the port. Allow it
+   once in an **administrator** PowerShell:
+   ```powershell
+   netsh advfirewall firewall add rule name="A to Zero" dir=in action=allow protocol=TCP localport=8080
+   ```
+
+**Install it like an app:** the site is a PWA. When served over HTTPS (e.g. via
+GitHub Pages) you can use your phone browser's **"Add to Home Screen"** to get a
+full-screen app with the A-to-Zero icon that even works offline. Over plain
+`http://` on your LAN it still works fine in the browser — it just skips the
+offline caching.
+
+The layout is fully responsive: two-up product grid, swipeable category bar,
+and finger-sized buttons on small screens. Orders are stored per browser, so
+your phone keeps its own cart, orders, and savings total.
 
 ## Files
 
-| File         | Purpose                                             |
-| ------------ | --------------------------------------------------- |
-| `index.html` | App shell: header, search, nav, footer              |
-| `catalog.js` | The fictional product catalog                       |
-| `app.js`     | Routing, cart, checkout, delivery simulation, state |
-| `styles.css` | The familiar-but-friendly storefront look           |
+| File            | Purpose                                             |
+| --------------- | --------------------------------------------------- |
+| `index.html`    | App shell: header, search, nav, footer              |
+| `catalog.js`    | The fictional product catalog                       |
+| `app.js`        | Routing, cart, checkout, delivery simulation, state |
+| `styles.css`    | The familiar-but-friendly storefront look           |
+| `manifest.json` | PWA manifest ("Add to Home Screen" support)         |
+| `sw.js`         | Service worker for offline use                      |
+| `icon.svg`      | App icon                                            |
+| `Dockerfile`    | nginx container serving the app                     |
+| `compose.yaml`  | One-command `docker compose up` setup               |
 
 ## Disclaimer
 

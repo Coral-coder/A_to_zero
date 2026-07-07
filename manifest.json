@@ -1,0 +1,14 @@
+{
+  "name": "A to Zero — Shopping Simulator",
+  "short_name": "A to Zero",
+  "description": "Shop everything, spend nothing. A therapeutic shopping simulator: browse, buy, track, and unbox — no money, no shipping, no data.",
+  "start_url": "./index.html",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#131921",
+  "theme_color": "#131921",
+  "icons": [
+    { "src": "icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any" }
+  ]
+}

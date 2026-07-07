@@ -1,0 +1,85 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>A to Zero — Shop Everything, Spend Nothing</title>
+<link rel="stylesheet" href="styles.css">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>📦</text></svg>">
+</head>
+<body>
+
+<!-- ============ SIMULATION BANNER ============ -->
+<div id="sim-banner">
+  🧘 <strong>Simulation mode</strong> — nothing is real. No money is charged, no products ship, no data leaves your browser. Enjoy the ride.
+</div>
+
+<!-- ============ HEADER ============ -->
+<header id="header">
+  <div class="header-row">
+    <a class="logo" href="#/" title="A to Zero home">
+      <span class="logo-text">a to zero</span>
+      <svg class="logo-smile" viewBox="0 0 80 20" aria-hidden="true">
+        <path d="M4 6 C 25 22, 55 22, 72 8" fill="none" stroke="#ff9900" stroke-width="4" stroke-linecap="round"/>
+        <path d="M72 8 l-7 -1 m7 1 l-3 6" fill="none" stroke="#ff9900" stroke-width="4" stroke-linecap="round"/>
+      </svg>
+    </a>
+
+    <div class="deliver-to" onclick="showToast('Deliveries go to your imagination — always free! 🏡')">
+      <span class="line1">Deliver to</span>
+      <span class="line2">📍 Your Imagination</span>
+    </div>
+
+    <div class="search-bar">
+      <select id="search-category" aria-label="Search category">
+        <option value="">All</option>
+      </select>
+      <input type="text" id="search-input" placeholder="Search A to Zero" aria-label="Search products">
+      <button id="search-btn" aria-label="Search">🔍</button>
+    </div>
+
+    <nav class="header-nav">
+      <a href="#/orders" class="nav-item">
+        <span class="line1">Returns</span>
+        <span class="line2">&amp; Orders</span>
+      </a>
+      <a href="#/stuff" class="nav-item">
+        <span class="line1">My</span>
+        <span class="line2">Stuff</span>
+      </a>
+      <a href="#/cart" class="nav-item cart-link">
+        <span class="cart-icon">🛒<span id="cart-count" class="cart-count">0</span></span>
+        <span class="line2">Cart</span>
+      </a>
+    </nav>
+  </div>
+
+  <div class="header-sub">
+    <div id="category-strip"></div>
+    <div class="savings-pill" id="savings-pill" title="Money you did NOT spend">
+      💰 Saved so far: <strong id="savings-amount">$0.00</strong>
+    </div>
+  </div>
+</header>
+
+<!-- ============ MAIN ============ -->
+<main id="main"></main>
+
+<!-- ============ FOOTER ============ -->
+<footer id="footer">
+  <div class="footer-inner">
+    <p><strong>A to Zero</strong> — the shopping simulator. Get the thrill, keep your money.</p>
+    <p class="footer-fine">This is a therapeutic shopping simulation. It is not affiliated with any real retailer.
+    No payments are processed, no products are shipped, no accounts exist, and no personal data is collected or transmitted.
+    Everything lives in your own browser and can be erased any time from <a href="#/stuff">My Stuff</a>.</p>
+  </div>
+</footer>
+
+<!-- ============ TOAST & CONFETTI ============ -->
+<div id="toast"></div>
+<canvas id="confetti-canvas"></canvas>
+
+<script src="catalog.js"></script>
+<script src="app.js"></script>
+</body>
+</html>

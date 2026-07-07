@@ -1,0 +1,559 @@
+/* ============================================================
+   A to Zero — shopping simulator
+   All state lives in localStorage. No network calls, no accounts,
+   no payments. The point is the ritual, not the receipt.
+   ============================================================ */
+
+const LS_KEY = "a2z-state-v1";
+
+/* ---------- delivery speed options (ms) ---------- */
+const SHIPPING_OPTIONS = [
+  { id: "standard", label: "FREE Standard Delivery", eta: "arrives in about 4 hours", duration: 4 * 60 * 60 * 1000 },
+  { id: "express",  label: "FREE Express Delivery",  eta: "arrives in about 30 minutes", duration: 30 * 60 * 1000 },
+  { id: "instantish", label: "FREE Almost-Instant Delivery", eta: "arrives in about 2 minutes", duration: 2 * 60 * 1000 },
+];
+
+/* Delivery lifecycle milestones as fraction of total duration */
+const MILESTONES = [
+  { at: 0.00, key: "ordered",   label: "Order placed",              icon: "🧾", detail: "We received your order and did a little celebration dance." },
+  { at: 0.08, key: "packed",    label: "Package is being prepared", icon: "📦", detail: "An imaginary employee is lovingly bubble-wrapping your item." },
+  { at: 0.30, key: "shipped",   label: "Shipped",                   icon: "🚚", detail: "Your package left our fictional fulfillment center." },
+  { at: 0.55, key: "hub",       label: "Arrived at local hub",      icon: "🏭", detail: "It's in your city now, resting briefly on a conveyor belt." },
+  { at: 0.75, key: "outfor",    label: "Out for delivery",          icon: "🛵", detail: "It's on the truck! The driver is 9 pretend stops away." },
+  { at: 1.00, key: "delivered", label: "Delivered",                 icon: "🏡", detail: "Your package has arrived. Go open it in My Stuff!" },
+];
+
+/* ---------- state ---------- */
+let state = loadState();
+function loadState() {
+  try {
+    const raw = localStorage.getItem(LS_KEY);
+    if (raw) return JSON.parse(raw);
+  } catch (e) { /* corrupted state — start fresh */ }
+  return { cart: {}, orders: [], stuff: [], saved: 0, notified: {} };
+}
+function saveState() { localStorage.setItem(LS_KEY, JSON.stringify(state)); }
+
+/* ---------- helpers ---------- */
+const $ = (sel) => document.querySelector(sel);
+const money = (n) => "$" + n.toFixed(2);
+const productById = (id) => PRODUCTS.find((p) => p.id === id);
+const catById = (id) => CATEGORIES.find((c) => c.id === id);
+
+function stars(rating) {
+  const full = Math.round(rating);
+  return `<span class="stars" title="${rating} out of 5">${"★".repeat(full)}${"☆".repeat(5 - full)}</span>`;
+}
+
+function esc(s) {
+  return String(s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+}
+
+function orderNumber() {
+  // Deterministic-ish fun order number
+  const n = state.orders.length + 1;
+  return `AZ0-${String(100000 + n * 7919).slice(-6)}-${String(1000000 + n * 104729).slice(-7)}`;
+}
+
+/* ---------- toast & confetti ---------- */
+let toastTimer = null;
+function showToast(msg) {
+  const t = $("#toast");
+  t.innerHTML = msg;
+  t.classList.add("show");
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => t.classList.remove("show"), 3200);
+}
+
+function confetti() {
+  const canvas = $("#confetti-canvas");
+  const ctx = canvas.getContext("2d");
+  canvas.width = window.innerWidth;
+  canvas.height = window.innerHeight;
+  canvas.style.display = "block";
+  const colors = ["#ff9900", "#146eb4", "#e91e63", "#4caf50", "#ffc107", "#9c27b0"];
+  const parts = Array.from({ length: 140 }, () => ({
+    x: Math.random() * canvas.width,
+    y: -20 - Math.random() * canvas.height * 0.5,
+    r: 4 + Math.random() * 6,
+    c: colors[Math.floor(Math.random() * colors.length)],
+    vy: 2 + Math.random() * 3.5,
+    vx: -1.5 + Math.random() * 3,
+    rot: Math.random() * Math.PI,
+    vr: -0.1 + Math.random() * 0.2,
+  }));
+  let frames = 0;
+  (function tick() {
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    parts.forEach((p) => {
+      p.x += p.vx; p.y += p.vy; p.rot += p.vr;
+      ctx.save();
+      ctx.translate(p.x, p.y);
+      ctx.rotate(p.rot);
+      ctx.fillStyle = p.c;
+      ctx.fillRect(-p.r / 2, -p.r / 2, p.r, p.r * 0.6);
+      ctx.restore();
+    });
+    frames++;
+    if (frames < 240) requestAnimationFrame(tick);
+    else canvas.style.display = "none";
+  })();
+}
+
+/* ---------- cart ---------- */
+function cartItems() {
+  return Object.entries(state.cart).map(([id, qty]) => ({ product: productById(id), qty })).filter((i) => i.product);
+}
+function cartCount() { return Object.values(state.cart).reduce((a, b) => a + b, 0); }
+function cartTotal() { return cartItems().reduce((sum, i) => sum + i.product.price * i.qty, 0); }
+
+function addToCart(id, qty = 1) {
+  state.cart[id] = (state.cart[id] || 0) + qty;
+  saveState();
+  updateHeader();
+  showToast(`✅ Added to cart — <strong>${esc(productById(id).name.split("—")[0].trim())}</strong>`);
+}
+function setCartQty(id, qty) {
+  if (qty <= 0) delete state.cart[id];
+  else state.cart[id] = qty;
+  saveState();
+  updateHeader();
+  render();
+}
+
+/* ---------- orders & delivery simulation ---------- */
+function placeOrder(shippingId) {
+  const items = cartItems();
+  if (!items.length) return;
+  const shipping = SHIPPING_OPTIONS.find((s) => s.id === shippingId) || SHIPPING_OPTIONS[0];
+  const total = cartTotal();
+  const order = {
+    id: "o" + Date.now(),
+    number: orderNumber(),
+    placedAt: Date.now(),
+    duration: shipping.duration,
+    shippingLabel: shipping.label,
+    items: items.map((i) => ({ id: i.product.id, qty: i.qty, price: i.product.price })),
+    total,
+    opened: false,
+  };
+  state.orders.unshift(order);
+  state.saved += total;
+  state.cart = {};
+  saveState();
+  updateHeader();
+  location.hash = `#/thankyou/${order.id}`;
+  confetti();
+}
+
+function orderProgress(order) {
+  return Math.min(1, (Date.now() - order.placedAt) / order.duration);
+}
+function orderMilestone(order) {
+  const p = orderProgress(order);
+  let current = MILESTONES[0];
+  for (const m of MILESTONES) if (p >= m.at) current = m;
+  return current;
+}
+function orderEtaText(order) {
+  const remaining = order.placedAt + order.duration - Date.now();
+  if (remaining <= 0) return "Delivered";
+  const mins = Math.ceil(remaining / 60000);
+  if (mins < 60) return `Arriving in about ${mins} minute${mins === 1 ? "" : "s"}`;
+  const hrs = Math.floor(mins / 60);
+  return `Arriving in about ${hrs}h ${mins % 60}m`;
+}
+
+/* Watch for deliveries and toast when one lands */
+setInterval(() => {
+  let changed = false;
+  for (const order of state.orders) {
+    if (orderProgress(order) >= 1 && !state.notified[order.id]) {
+      state.notified[order.id] = true;
+      changed = true;
+      showToast(`📦 <strong>Your package was delivered!</strong> Order ${esc(order.number)} is waiting in <a href="#/orders">Your Orders</a>.`);
+      confetti();
+    }
+  }
+  if (changed) saveState();
+  // live-refresh tracking views
+  if (location.hash.startsWith("#/track/") || location.hash === "#/orders") render();
+}, 5000);
+
+/* ---------- header ---------- */
+function updateHeader() {
+  $("#cart-count").textContent = cartCount();
+  $("#savings-amount").textContent = money(state.saved);
+}
+
+function buildHeaderStatics() {
+  const sel = $("#search-category");
+  CATEGORIES.forEach((c) => {
+    const o = document.createElement("option");
+    o.value = c.id; o.textContent = c.name;
+    sel.appendChild(o);
+  });
+  $("#category-strip").innerHTML =
+    `<a href="#/" class="strip-link">🏠 Home</a>` +
+    CATEGORIES.map((c) => `<a href="#/category/${c.id}" class="strip-link">${c.emoji} ${esc(c.name)}</a>`).join("") +
+    `<a href="#/orders" class="strip-link">🚚 Track Orders</a>`;
+
+  const doSearch = () => {
+    const q = $("#search-input").value.trim();
+    const cat = $("#search-category").value;
+    location.hash = `#/search/${encodeURIComponent(q)}${cat ? "?cat=" + cat : ""}`;
+  };
+  $("#search-btn").addEventListener("click", doSearch);
+  $("#search-input").addEventListener("keydown", (e) => { if (e.key === "Enter") doSearch(); });
+}
+
+/* ---------- views ---------- */
+function productCard(p) {
+  return `
+  <div class="card">
+    <a class="card-img" href="#/product/${p.id}"><span class="emoji-art">${p.emoji}</span></a>
+    <div class="card-body">
+      <a class="card-title" href="#/product/${p.id}">${esc(p.name)}</a>
+      <div class="card-rating">${stars(p.rating)} <span class="review-count">${p.reviews.toLocaleString()}</span></div>
+      <div class="card-price">
+        <span class="price">${money(p.price)}</span>
+        ${p.was ? `<span class="was">${money(p.was)}</span>` : ""}
+      </div>
+      ${p.prime ? `<div class="prime-badge">✓ zero<span>prime</span> FREE pretend delivery</div>` : `<div class="prime-badge none">FREE pretend delivery</div>`}
+      <button class="btn btn-cart" onclick="addToCart('${p.id}')">Add to Cart</button>
+    </div>
+  </div>`;
+}
+
+function viewHome() {
+  const deals = [...PRODUCTS].filter((p) => p.was).sort((a, b) => (b.was - b.price) / b.was - (a.was - a.price) / a.was).slice(0, 4);
+  return `
+  <div class="hero">
+    <div class="hero-inner">
+      <h1>Shop everything. Spend <em>zero</em>.</h1>
+      <p>The full shopping experience — browsing, buying, tracking, unboxing — with none of the money leaving your pocket. You've already kept <strong>${money(state.saved)}</strong> where it belongs.</p>
+    </div>
+  </div>
+  <section class="section">
+    <h2>🔥 Today's Pretend Deals</h2>
+    <div class="grid">${deals.map(productCard).join("")}</div>
+  </section>
+  ${CATEGORIES.map((c) => {
+    const items = PRODUCTS.filter((p) => p.cat === c.id).slice(0, 4);
+    return `<section class="section">
+      <h2>${c.emoji} ${esc(c.name)} <a class="see-all" href="#/category/${c.id}">See all</a></h2>
+      <div class="grid">${items.map(productCard).join("")}</div>
+    </section>`;
+  }).join("")}`;
+}
+
+function viewCategory(catId) {
+  const c = catById(catId);
+  if (!c) return viewNotFound();
+  const items = PRODUCTS.filter((p) => p.cat === catId);
+  return `<section class="section">
+    <h2>${c.emoji} ${esc(c.name)}</h2>
+    <div class="grid">${items.map(productCard).join("")}</div>
+  </section>`;
+}
+
+function viewSearch(query, catId) {
+  const q = query.toLowerCase();
+  let items = PRODUCTS.filter((p) => (p.name + " " + p.blurb).toLowerCase().includes(q));
+  if (catId) items = items.filter((p) => p.cat === catId);
+  return `<section class="section">
+    <h2>Results for “${esc(query)}” <span class="muted">(${items.length})</span></h2>
+    ${items.length ? `<div class="grid">${items.map(productCard).join("")}</div>`
+      : `<div class="empty">🔍 Nothing found — but hey, that's money saved without even trying.</div>`}
+  </section>`;
+}
+
+function viewProduct(id) {
+  const p = productById(id);
+  if (!p) return viewNotFound();
+  const c = catById(p.cat);
+  const pct = p.was ? Math.round(((p.was - p.price) / p.was) * 100) : 0;
+  return `
+  <div class="breadcrumb"><a href="#/">Home</a> › <a href="#/category/${p.cat}">${esc(c.name)}</a></div>
+  <div class="product-page">
+    <div class="product-img"><span class="emoji-art xl">${p.emoji}</span></div>
+    <div class="product-info">
+      <h1>${esc(p.name)}</h1>
+      <div class="card-rating">${stars(p.rating)} <span class="review-count">${p.reviews.toLocaleString()} ratings</span></div>
+      <hr>
+      <div class="price-block">
+        ${pct ? `<span class="deal-flag">-${pct}%</span>` : ""}
+        <span class="price big">${money(p.price)}</span>
+        ${p.was ? `<div class="was-line">List price: <span class="was">${money(p.was)}</span></div>` : ""}
+      </div>
+      <p class="blurb">${esc(p.blurb)}</p>
+      <h3>About this item</h3>
+      <ul class="bullets">${p.bullets.map((b) => `<li>${esc(b)}</li>`).join("")}</ul>
+    </div>
+    <div class="buy-box">
+      <div class="price big">${money(p.price)}</div>
+      <div class="prime-badge">✓ zero<span>prime</span></div>
+      <p class="delivery-line">FREE delivery to <strong>Your Imagination</strong> — as fast as you like.</p>
+      <p class="stock">In Stock (infinitely — it's imaginary)</p>
+      <button class="btn btn-cart" onclick="addToCart('${p.id}')">Add to Cart</button>
+      <button class="btn btn-buy" onclick="addToCart('${p.id}'); location.hash='#/checkout'">Buy Now</button>
+      <p class="fine">🔒 Transaction secured by not existing</p>
+    </div>
+  </div>`;
+}
+
+function viewCart() {
+  const items = cartItems();
+  if (!items.length) {
+    return `<section class="section"><div class="empty">
+      🛒 Your cart is empty.<br><small>Which, honestly, is also a win.</small><br><br>
+      <a class="btn btn-cart inline" href="#/">Keep browsing</a>
+    </div></section>`;
+  }
+  return `<section class="section cart-page">
+    <div class="cart-list">
+      <h2>Shopping Cart</h2>
+      ${items.map((i) => `
+        <div class="cart-row">
+          <a href="#/product/${i.product.id}" class="cart-emoji">${i.product.emoji}</a>
+          <div class="cart-mid">
+            <a class="card-title" href="#/product/${i.product.id}">${esc(i.product.name)}</a>
+            <div class="stock small">In Stock — ships from the Cloud of Pure Possibility</div>
+            <div class="qty-controls">
+              <button onclick="setCartQty('${i.product.id}', ${i.qty - 1})">−</button>
+              <span>${i.qty}</span>
+              <button onclick="setCartQty('${i.product.id}', ${i.qty + 1})">+</button>
+              <a class="link" onclick="setCartQty('${i.product.id}', 0)">Delete</a>
+            </div>
+          </div>
+          <div class="cart-price">${money(i.product.price * i.qty)}</div>
+        </div>`).join("")}
+      <div class="cart-subtotal">Subtotal (${cartCount()} item${cartCount() === 1 ? "" : "s"}): <strong>${money(cartTotal())}</strong></div>
+    </div>
+    <div class="cart-side">
+      <div class="cart-subtotal">Subtotal (${cartCount()} item${cartCount() === 1 ? "" : "s"}): <strong>${money(cartTotal())}</strong></div>
+      <div class="you-pay">You will actually pay: <strong>$0.00</strong> 🎉</div>
+      <a class="btn btn-buy" href="#/checkout">Proceed to checkout</a>
+    </div>
+  </section>`;
+}
+
+function viewCheckout() {
+  const items = cartItems();
+  if (!items.length) return `<section class="section"><div class="empty">Nothing to check out. <a href="#/">Go find something imaginary.</a></div></section>`;
+  return `<section class="section checkout-page">
+    <h2>Checkout <span class="muted">(the fun part, minus the guilt part)</span></h2>
+    <div class="checkout-grid">
+      <div class="checkout-main">
+        <div class="panel">
+          <h3>1 &nbsp; Delivery address</h3>
+          <p><strong>You</strong><br>The Comfiest Chair in the House<br>Your Imagination, Earth 00000</p>
+          <p class="fine">No real address needed — the package is a feeling.</p>
+        </div>
+        <div class="panel">
+          <h3>2 &nbsp; Payment method</h3>
+          <p>💳 <strong>Card of Infinite Restraint</strong> ending in 0000</p>
+          <p class="fine">This card charges nothing, always declines regret, and never expires.</p>
+        </div>
+        <div class="panel">
+          <h3>3 &nbsp; Choose your delivery speed</h3>
+          ${SHIPPING_OPTIONS.map((s, idx) => `
+            <label class="ship-option">
+              <input type="radio" name="ship" value="${s.id}" ${idx === 1 ? "checked" : ""}>
+              <span><strong>${esc(s.label)}</strong> — ${esc(s.eta)}</span>
+            </label>`).join("")}
+          <p class="fine">Pick a longer wait for the full anticipation experience, or almost-instant if today is hard.</p>
+        </div>
+        <div class="panel">
+          <h3>4 &nbsp; Review items</h3>
+          ${items.map((i) => `<div class="review-row"><span>${i.product.emoji} ${esc(i.product.name.split("—")[0].trim())} × ${i.qty}</span><span>${money(i.product.price * i.qty)}</span></div>`).join("")}
+        </div>
+      </div>
+      <div class="checkout-side panel">
+        <button class="btn btn-buy" onclick="placeOrder(document.querySelector('input[name=ship]:checked').value)">Place your pretend order</button>
+        <hr>
+        <div class="summary-row"><span>Items:</span><span>${money(cartTotal())}</span></div>
+        <div class="summary-row"><span>Shipping:</span><span>$0.00</span></div>
+        <div class="summary-row"><span>Tax:</span><span>$0.00</span></div>
+        <div class="summary-row total"><span>Order total:</span><span>${money(cartTotal())}</span></div>
+        <div class="summary-row charged"><span>Amount charged:</span><span>$0.00</span></div>
+        <p class="fine">By placing this order you agree to feel good about not spending ${money(cartTotal())}.</p>
+      </div>
+    </div>
+  </section>`;
+}
+
+function viewThankYou(orderId) {
+  const order = state.orders.find((o) => o.id === orderId);
+  if (!order) return viewNotFound();
+  return `<section class="section thankyou">
+    <div class="ty-box">
+      <div class="ty-check">✅</div>
+      <h1>Order placed. Wallet untouched.</h1>
+      <p>Order <strong>${esc(order.number)}</strong> · ${order.shippingLabel} · <strong>${orderEtaText(order)}</strong></p>
+      <p class="ty-saved">You just kept <strong>${money(order.total)}</strong> in your pocket. Lifetime savings: <strong>${money(state.saved)}</strong> 💰</p>
+      <div class="ty-actions">
+        <a class="btn btn-buy" href="#/track/${order.id}">Track your package</a>
+        <a class="btn btn-cart" href="#/">Keep browsing</a>
+      </div>
+      <p class="fine">Real craving satisfied. Zero dollars spent. Zero boxes landfilled.</p>
+    </div>
+  </section>`;
+}
+
+function viewOrders() {
+  if (!state.orders.length) {
+    return `<section class="section"><div class="empty">📭 No orders yet. The trucks are waiting for you.<br><br><a class="btn btn-cart inline" href="#/">Start shopping</a></div></section>`;
+  }
+  return `<section class="section">
+    <h2>Your Orders</h2>
+    ${state.orders.map((o) => {
+      const m = orderMilestone(o);
+      const delivered = orderProgress(o) >= 1;
+      return `<div class="order-card">
+        <div class="order-head">
+          <div><span class="muted">ORDER PLACED</span><br>${new Date(o.placedAt).toLocaleString()}</div>
+          <div><span class="muted">TOTAL (NOT CHARGED)</span><br>${money(o.total)}</div>
+          <div><span class="muted">ORDER #</span><br>${esc(o.number)}</div>
+        </div>
+        <div class="order-body">
+          <div class="order-status ${delivered ? "delivered" : ""}">${m.icon} <strong>${m.label}</strong> — ${delivered ? "arrived safe and sound" : orderEtaText(o)}</div>
+          <div class="order-items">${o.items.map((i) => {
+            const p = productById(i.id);
+            return `<a href="#/product/${p.id}" class="order-item" title="${esc(p.name)}">${p.emoji}<span>× ${i.qty}</span></a>`;
+          }).join("")}</div>
+          <div class="order-actions">
+            <a class="btn btn-cart small" href="#/track/${o.id}">${delivered ? "View delivery" : "Track package"}</a>
+            ${delivered && !o.opened ? `<a class="btn btn-buy small" href="#/track/${o.id}">📦 Open your package!</a>` : ""}
+          </div>
+        </div>
+      </div>`;
+    }).join("")}
+  </section>`;
+}
+
+function viewTrack(orderId) {
+  const order = state.orders.find((o) => o.id === orderId);
+  if (!order) return viewNotFound();
+  const progress = orderProgress(order);
+  const delivered = progress >= 1;
+  const truckPos = Math.min(97, progress * 100);
+  return `<section class="section track-page">
+    <h2>Tracking order ${esc(order.number)}</h2>
+    <div class="panel">
+      <h3 class="eta-line">${delivered ? "🏡 Delivered!" : orderEtaText(order)}</h3>
+      <div class="truck-road">
+        <div class="road"></div>
+        <div class="truck" style="left:${truckPos}%">${delivered ? "🏡" : "🚚"}</div>
+        <div class="house">🏠</div>
+        <div class="warehouse">🏭</div>
+      </div>
+      <div class="progress-outer"><div class="progress-inner" style="width:${progress * 100}%"></div></div>
+      <ol class="timeline">
+        ${MILESTONES.map((m) => {
+          const reached = progress >= m.at;
+          const isCurrent = orderMilestone(order).key === m.key;
+          return `<li class="${reached ? "reached" : ""} ${isCurrent ? "current" : ""}">
+            <span class="tl-icon">${m.icon}</span>
+            <div><strong>${m.label}</strong>${reached ? `<div class="tl-detail">${m.detail}</div>` : ""}</div>
+          </li>`;
+        }).join("")}
+      </ol>
+      ${delivered && !order.opened ? `
+        <div class="package-arrived">
+          <p>Your package is at the door! 🚪</p>
+          <button class="btn btn-buy" onclick="openPackage('${order.id}')">📦 Open the package</button>
+        </div>` : ""}
+      ${delivered && order.opened ? `
+        <div class="package-arrived opened">
+          <p>Opened and enjoyed. Everything's in <a href="#/stuff">My Stuff</a>. ✨</p>
+        </div>` : ""}
+      ${!delivered ? `<p class="fine">This page updates automatically. Anticipation is 90% of the fun — the other 10% is also anticipation.</p>` : ""}
+    </div>
+  </section>`;
+}
+
+function openPackage(orderId) {
+  const order = state.orders.find((o) => o.id === orderId);
+  if (!order || order.opened) return;
+  order.opened = true;
+  for (const i of order.items) {
+    state.stuff.unshift({ id: i.id, qty: i.qty, openedAt: Date.now(), orderNumber: order.number });
+  }
+  saveState();
+  confetti();
+  showToast("🎉 <strong>Unboxed!</strong> Your imaginary goodies are now in My Stuff.");
+  render();
+}
+
+function viewStuff() {
+  return `<section class="section">
+    <h2>My Stuff <span class="muted">— everything you "own", nothing you paid for</span></h2>
+    <div class="stuff-stats">
+      <div class="stat"><div class="stat-num">${money(state.saved)}</div><div class="stat-label">real money kept</div></div>
+      <div class="stat"><div class="stat-num">${state.orders.length}</div><div class="stat-label">orders enjoyed</div></div>
+      <div class="stat"><div class="stat-num">${state.stuff.reduce((a, s) => a + s.qty, 0)}</div><div class="stat-label">items unboxed</div></div>
+      <div class="stat"><div class="stat-num">0</div><div class="stat-label">boxes in landfill</div></div>
+    </div>
+    ${state.stuff.length ? `<div class="grid">${state.stuff.map((s) => {
+      const p = productById(s.id);
+      return `<div class="card stuff-card">
+        <div class="card-img"><span class="emoji-art">${p.emoji}</span></div>
+        <div class="card-body">
+          <a class="card-title" href="#/product/${p.id}">${esc(p.name.split("—")[0].trim())}</a>
+          <div class="muted small">× ${s.qty} · unboxed ${new Date(s.openedAt).toLocaleDateString()}</div>
+          <div class="muted small">from order ${esc(s.orderNumber)}</div>
+        </div>
+      </div>`;
+    }).join("")}</div>` : `<div class="empty">Nothing unboxed yet — packages land here after you open them.</div>`}
+    <div class="danger-zone">
+      <h3>Fresh start</h3>
+      <p class="fine">Everything lives only in this browser. One click erases it all.</p>
+      <button class="btn btn-danger" onclick="resetAll()">Erase all my data</button>
+    </div>
+  </section>`;
+}
+
+function resetAll() {
+  if (!confirm("Erase all orders, stuff, and savings history from this browser?")) return;
+  localStorage.removeItem(LS_KEY);
+  state = loadState();
+  updateHeader();
+  location.hash = "#/";
+  render();
+  showToast("🧹 All clear. Fresh start.");
+}
+
+function viewNotFound() {
+  return `<section class="section"><div class="empty">🕳️ 404 — this page is even more imaginary than the products.<br><br><a class="btn btn-cart inline" href="#/">Back home</a></div></section>`;
+}
+
+/* ---------- router ---------- */
+function render() {
+  const hash = location.hash || "#/";
+  const [path, queryStr] = hash.slice(2).split("?");
+  const parts = path.split("/");
+  const query = new URLSearchParams(queryStr || "");
+  let html;
+  switch (parts[0]) {
+    case "":          html = viewHome(); break;
+    case "category":  html = viewCategory(parts[1]); break;
+    case "search":    html = viewSearch(decodeURIComponent(parts[1] || ""), query.get("cat")); break;
+    case "product":   html = viewProduct(parts[1]); break;
+    case "cart":      html = viewCart(); break;
+    case "checkout":  html = viewCheckout(); break;
+    case "thankyou":  html = viewThankYou(parts[1]); break;
+    case "orders":    html = viewOrders(); break;
+    case "track":     html = viewTrack(parts[1]); break;
+    case "stuff":     html = viewStuff(); break;
+    default:          html = viewNotFound();
+  }
+  $("#main").innerHTML = html;
+}
+
+window.addEventListener("hashchange", () => { render(); window.scrollTo(0, 0); });
+
+/* ---------- boot ---------- */
+buildHeaderStatics();
+updateHeader();
+render();

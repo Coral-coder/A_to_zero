@@ -30,6 +30,20 @@ AliExpress Affiliate, eBay, Best Buy) are not included — there is no
 legitimate keyless access to those catalogs. If you obtain keys, the
 `CATALOG_SOURCES` list in `app.js` is where a new source plugs in.
 
+## Shop the real stores — spend nothing: the clipper 🔖
+
+The **➕ Add Any Product** page gives you a one-click bookmarklet. Browse the
+*actual* Amazon / Walmart / Temu / anywhere in your own browser, and when
+something tempts you, click the clipper bookmark: the product's real name,
+price, and photo jump into A to Zero, pre-filled, ready to "buy" for $0.00.
+Clipped items get their own **My Finds** category and work with the full
+order-and-delivery experience.
+
+The clipper only reads the single product page you're already viewing —
+one item at a time, at your click. It's the digital equivalent of writing
+the product down on a sticky note: no automation, no bulk collection, no
+interference with the store.
+
 ## The full loop
 
 1. **Browse** the merged catalog across two dozen categories, with search, deals, ratings, and product pages.

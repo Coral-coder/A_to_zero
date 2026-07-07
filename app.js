@@ -148,9 +148,15 @@ const CATALOG_SOURCES = [
   },
 ];
 
+/* "My Finds" — products the user personally clipped from real stores */
+const MY_FINDS_CAT = { id: "my-finds", name: "My Finds", emoji: "⭐" };
+let catalogBase = { products: BUILTIN_PRODUCTS, categories: BUILTIN_CATEGORIES };
+
 function useCatalog(products, categories) {
-  PRODUCTS = products;
-  CATEGORIES = categories;
+  catalogBase = { products, categories };
+  const custom = (state && state.custom) || [];
+  PRODUCTS = [...custom, ...products];
+  CATEGORIES = custom.length ? [MY_FINDS_CAT, ...categories] : categories;
   buildCategoryUI();
   render();
 }
@@ -196,9 +202,13 @@ let state = loadState();
 function loadState() {
   try {
     const raw = localStorage.getItem(LS_KEY);
-    if (raw) return JSON.parse(raw);
+    if (raw) {
+      const s = JSON.parse(raw);
+      if (!s.custom) s.custom = []; // migrate pre-My-Finds saves
+      return s;
+    }
   } catch (e) { /* corrupted state — start fresh */ }
-  return { cart: {}, orders: [], stuff: [], saved: 0, notified: {} };
+  return { cart: {}, orders: [], stuff: [], saved: 0, notified: {}, custom: [] };
 }
 function saveState() { localStorage.setItem(LS_KEY, JSON.stringify(state)); }
 
@@ -383,7 +393,8 @@ function buildCategoryUI() {
   $("#category-strip").innerHTML =
     `<a href="#/" class="strip-link">🏠 Home</a>` +
     CATEGORIES.map((c) => `<a href="#/category/${c.id}" class="strip-link">${c.emoji} ${esc(c.name)}</a>`).join("") +
-    `<a href="#/orders" class="strip-link">🚚 Track Orders</a>`;
+    `<a href="#/orders" class="strip-link">🚚 Track Orders</a>` +
+    `<a href="#/add" class="strip-link">➕ Add Any Product</a>`;
 }
 
 function buildHeaderStatics() {
@@ -708,6 +719,74 @@ function viewStuff() {
   </section>`;
 }
 
+function viewAdd(query) {
+  const pre = {
+    name: query.get("name") || "",
+    price: (query.get("price") || "").replace(/[^0-9.,]/g, ""),
+    img: query.get("img") || "",
+    store: query.get("store") || "",
+  };
+  const appUrl = location.origin + location.pathname;
+  // The clipper runs in YOUR browser on the page YOU are viewing — it just
+  // copies the product's title/price/image into A to Zero, one at a time.
+  const clipper = `javascript:(()=>{const q=s=>document.querySelector(s);const m=(s,a)=>{const e=q(s);return e?(a?e.getAttribute(a):e.textContent):''};const t=m('meta[property="og:title"]','content')||document.title;const i=m('meta[property="og:image"]','content')||(q('#landingImage')?q('#landingImage').src:'');let p=m('meta[property="product:price:amount"]','content')||m('[itemprop=price]','content')||m('.a-price .a-offscreen')||m('[data-testid=price-wrap]')||'';p=(p.match(/[0-9]+([.,][0-9]{1,2})?/)||[''])[0].replace(',','.');window.open('${appUrl}#/add?name='+encodeURIComponent(t.slice(0,180))+'&price='+encodeURIComponent(p)+'&img='+encodeURIComponent(i)+'&store='+encodeURIComponent(location.hostname.replace('www.','')));})();`;
+  return `<section class="section">
+    <h2>⭐ Add any product <span class="muted">— clip it from the real store, "buy" it here</span></h2>
+    <div class="checkout-grid">
+      <div class="checkout-main">
+        <div class="panel">
+          <h3>Product details</h3>
+          <div class="form-grid">
+            <label>Product name *<input id="af-name" type="text" maxlength="200" placeholder="e.g. Sony WH-1000XM5 Headphones" value="${esc(pre.name)}"></label>
+            <label>Price (USD) *<input id="af-price" type="text" inputmode="decimal" placeholder="e.g. 348.00" value="${esc(pre.price)}"></label>
+            <label>Image URL <span class="muted">(optional)</span><input id="af-img" type="text" placeholder="https://…" value="${esc(pre.img)}"></label>
+            <label>Where you saw it <span class="muted">(optional)</span><input id="af-store" type="text" maxlength="60" placeholder="e.g. amazon.com" value="${esc(pre.store)}"></label>
+          </div>
+          <button class="btn btn-buy" onclick="addCustomFromForm()">Add to My Finds</button>
+        </div>
+      </div>
+      <div class="checkout-side panel">
+        <h3>🔖 The 1-click clipper</h3>
+        <p class="fine" style="font-size:13px">Browse any real store — Amazon, Temu, Walmart, anywhere. When something tempts you, click this bookmark and the product jumps here, pre-filled, instead of into your real cart.</p>
+        <p class="fine" style="font-size:13px"><strong>Setup (once):</strong> show your bookmarks bar (Ctrl+Shift+B), then drag the button below onto it. On the phone: copy the code and paste it as a bookmark's URL.</p>
+        <a class="btn btn-cart" href="${esc(clipper)}" onclick="showToast('Drag me to your bookmarks bar instead of clicking! 🔖'); return false;">📎 Send to A to Zero</a>
+        <button class="btn btn-cart" onclick="navigator.clipboard.writeText(document.getElementById('clipper-code').textContent).then(()=>showToast('📋 Clipper code copied.'))">Copy clipper code</button>
+        <details><summary class="fine">Show code</summary><pre id="clipper-code" class="clipper-code">${esc(clipper)}</pre></details>
+        <p class="fine">The clipper only reads the page you're already looking at, one product at a time — nothing automated, nothing bulk.</p>
+      </div>
+    </div>
+  </section>`;
+}
+
+function addCustomFromForm() {
+  const name = $("#af-name").value.trim();
+  const price = parseFloat(($("#af-price").value || "").replace(/[^0-9.,]/g, "").replace(",", "."));
+  let img = $("#af-img").value.trim();
+  const store = $("#af-store").value.trim() || "somewhere out there";
+  if (!name || !(price > 0)) { showToast("⚠️ It needs at least a name and a price."); return; }
+  if (!/^https?:\/\//i.test(img)) img = null;
+  const p = {
+    id: "c" + Date.now(),
+    cat: "my-finds",
+    store,
+    emoji: "🛍️",
+    img,
+    name,
+    price: +price.toFixed(2),
+    was: null,
+    rating: 5,
+    reviews: 1,
+    prime: true,
+    blurb: `You spotted this at ${store} and routed the craving here instead of your wallet. Excellent move.`,
+    bullets: [`Found at: ${store}`, `Their price: ${money(+price.toFixed(2))} — your price: $0.00`],
+  };
+  state.custom.unshift(p);
+  saveState();
+  useCatalog(catalogBase.products, catalogBase.categories);
+  location.hash = "#/product/" + p.id;
+  showToast("⭐ Saved to My Finds — now go \"buy\" it for free.");
+}
+
 function resetAll() {
   if (!confirm("Erase all orders, stuff, and savings history from this browser?")) return;
   localStorage.removeItem(LS_KEY);
@@ -740,6 +819,7 @@ function render() {
     case "orders":    html = viewOrders(); break;
     case "track":     html = viewTrack(parts[1]); break;
     case "stuff":     html = viewStuff(); break;
+    case "add":       html = viewAdd(query); break;
     default:          html = viewNotFound();
   }
   $("#main").innerHTML = html;
@@ -750,5 +830,5 @@ window.addEventListener("hashchange", () => { render(); window.scrollTo(0, 0); }
 /* ---------- boot ---------- */
 buildHeaderStatics();
 updateHeader();
-render();
+useCatalog(BUILTIN_PRODUCTS, BUILTIN_CATEGORIES); // includes My Finds immediately
 loadLiveCatalog();

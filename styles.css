@@ -255,6 +255,21 @@ a:hover { text-decoration: underline; }
 .summary-row.total { font-weight: 700; font-size: 17px; color: var(--price-red); border-top: 1px solid var(--border); margin-top: 6px; padding-top: 8px; }
 .summary-row.charged { font-weight: 700; color: var(--green); }
 
+/* ---------- add-product form ---------- */
+.form-grid { display: flex; flex-direction: column; gap: 12px; margin-bottom: 16px; }
+.form-grid label { font-size: 13px; font-weight: 600; display: flex; flex-direction: column; gap: 5px; }
+.form-grid input {
+  border: 1px solid #888c8c; border-radius: 6px; padding: 9px 10px;
+  font-size: 14px; font-weight: 400; outline: none;
+}
+.form-grid input:focus { border-color: var(--accent-dark); box-shadow: 0 0 0 3px #ff990055; }
+.clipper-code {
+  font-size: 10px; white-space: pre-wrap; word-break: break-all;
+  background: #f0f2f2; border: 1px solid var(--border); border-radius: 6px;
+  padding: 8px; margin-top: 8px; max-height: 140px; overflow-y: auto;
+}
+.checkout-side details summary { cursor: pointer; }
+
 /* ---------- thank you ---------- */
 .thankyou { display: flex; justify-content: center; }
 .ty-box {

@@ -6,6 +6,13 @@
 
 const LS_KEY = "a2z-state-v1";
 
+/* When the simulator is served inside the store mirror it lives under
+   /__a2z/, and the real (mirrored) store sits at the origin root. In that
+   case "keep shopping / home" should return to the real store, not the
+   simulator's own fictional catalog. Standalone, it stays on the SPA home. */
+const UNDER_MIRROR = /\/__a2z(\/|$)/.test(location.pathname);
+const STORE_HREF = UNDER_MIRROR ? "/" : "#/";
+
 /* ---------- delivery speed options (ms) ---------- */
 const SHIPPING_OPTIONS = [
   { id: "standard", label: "FREE Standard Delivery", eta: "arrives in about 4 hours", duration: 4 * 60 * 60 * 1000 },
@@ -391,7 +398,8 @@ function buildCategoryUI() {
     sel.appendChild(o);
   });
   $("#category-strip").innerHTML =
-    `<a href="#/" class="strip-link">🏠 Home</a>` +
+    (UNDER_MIRROR ? `<a href="/" class="strip-link strip-store">🔙 Back to the store</a>` : "") +
+    `<a href="#/" class="strip-link">🏠 ${UNDER_MIRROR ? "A to Zero" : "Home"}</a>` +
     CATEGORIES.map((c) => `<a href="#/category/${c.id}" class="strip-link">${c.emoji} ${esc(c.name)}</a>`).join("") +
     `<a href="#/orders" class="strip-link">🚚 Track Orders</a>` +
     `<a href="#/add" class="strip-link">➕ Add Any Product</a>`;
@@ -509,7 +517,7 @@ function viewCart() {
   if (!items.length) {
     return `<section class="section"><div class="empty">
       🛒 Your cart is empty.<br><small>Which, honestly, is also a win.</small><br><br>
-      <a class="btn btn-cart inline" href="#/">Keep browsing</a>
+      <a class="btn btn-cart inline" href="${STORE_HREF}">Keep browsing</a>
     </div></section>`;
   }
   return `<section class="section cart-page">
@@ -596,7 +604,7 @@ function viewThankYou(orderId) {
       <p class="ty-saved">You just kept <strong>${money(order.total)}</strong> in your pocket. Lifetime savings: <strong>${money(state.saved)}</strong> 💰</p>
       <div class="ty-actions">
         <a class="btn btn-buy" href="#/track/${order.id}">Track your package</a>
-        <a class="btn btn-cart" href="#/">Keep browsing</a>
+        <a class="btn btn-cart" href="${STORE_HREF}">Keep browsing</a>
       </div>
       <p class="fine">Real craving satisfied. Zero dollars spent. Zero boxes landfilled.</p>
     </div>
@@ -605,7 +613,7 @@ function viewThankYou(orderId) {
 
 function viewOrders() {
   if (!state.orders.length) {
-    return `<section class="section"><div class="empty">📭 No orders yet. The trucks are waiting for you.<br><br><a class="btn btn-cart inline" href="#/">Start shopping</a></div></section>`;
+    return `<section class="section"><div class="empty">📭 No orders yet. The trucks are waiting for you.<br><br><a class="btn btn-cart inline" href="${STORE_HREF}">Start shopping</a></div></section>`;
   }
   return `<section class="section">
     <h2>Your Orders</h2>
@@ -828,6 +836,11 @@ function render() {
 window.addEventListener("hashchange", () => { render(); window.scrollTo(0, 0); });
 
 /* ---------- boot ---------- */
+if (UNDER_MIRROR) {
+  // The logo takes you back to the real (mirrored) store, not the fake home.
+  const logo = document.querySelector(".logo");
+  if (logo) logo.setAttribute("href", "/");
+}
 buildHeaderStatics();
 updateHeader();
 useCatalog(BUILTIN_PRODUCTS, BUILTIN_CATEGORIES); // includes My Finds immediately

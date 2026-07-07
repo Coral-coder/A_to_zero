@@ -46,13 +46,23 @@ mobile layout, normal browsing with no extra clicks — but:
 - A slim bar pinned to the bottom of every page reminds you it's a simulation
   and shows your pretend-cart count.
 
-Once it's running (see below), just open **http://localhost:8080** on your PC or
+Once it's running (see below), just open **http://localhost:8888** on your PC or
 phone and shop. That's it — no bookmarklet, no second tab, no separate link.
 
 **How to run it:** `docker compose up -d --build`, then browse
-`http://localhost:8080`. To mirror a different store, change `TARGET` in
-`compose.yaml` (e.g. `https://www.walmart.com`) and rebuild. The simulator on
-its own always lives at `http://localhost:8080/__a2z/`.
+`http://localhost:8888`. The simulator on its own always lives at
+`http://localhost:8888/__a2z/`.
+
+**Change the port or the store** without touching tracked files: copy
+`.env.example` to `.env` and edit it. Your `.env` is git-ignored, so
+`git pull` never overwrites your choices.
+
+```
+A2Z_PORT=8888                     # the port you open in the browser
+TARGET=https://www.amazon.com     # the store to mirror
+```
+
+After editing `.env`, run `docker compose up -d --build` again.
 
 **Honest limits:** big retailers actively fight proxied traffic with bot
 detection and CAPTCHAs, so mirroring can be flaky or get blocked — it works
@@ -112,11 +122,17 @@ It's a fully static site — no build step, no dependencies. Pick whichever fits
    cd A_to_zero
    ```
    (Or download the repo as a ZIP from GitHub and unzip it.)
-3. Build and start the container:
+3. Set your port (optional): copy `.env.example` to `.env` and set
+   `A2Z_PORT` to any free port (default is `8888`):
+   ```powershell
+   copy .env.example .env
+   ```
+4. Build and start the container:
    ```powershell
    docker compose up -d --build
    ```
-4. Open **http://localhost:8080** in your browser. Done.
+5. Open **http://localhost:8888** in your browser (or whatever `A2Z_PORT` you
+   set). Done.
 
 Useful commands:
 
@@ -144,11 +160,12 @@ python3 -m http.server 8000   # then visit http://localhost:8000
 
 1. Find your PC's local IP: run `ipconfig` in PowerShell and look for
    `IPv4 Address` (something like `192.168.1.42`).
-2. On your phone (same Wi-Fi network), open `http://192.168.1.42:8080`.
+2. On your phone (same Wi-Fi network), open `http://192.168.1.42:8888`
+   (use your `A2Z_PORT`).
 3. If it doesn't load, Windows Firewall is likely blocking the port. Allow it
-   once in an **administrator** PowerShell:
+   once in an **administrator** PowerShell (match the port to your `A2Z_PORT`):
    ```powershell
-   netsh advfirewall firewall add rule name="A to Zero" dir=in action=allow protocol=TCP localport=8080
+   netsh advfirewall firewall add rule name="A to Zero" dir=in action=allow protocol=TCP localport=8888
    ```
 
 **Install it like an app:** the site is a PWA. When served over HTTPS (e.g. via

@@ -2,10 +2,12 @@ services:
   a-to-zero:
     build: .
     container_name: a-to-zero
+    # Host port is set by A2Z_PORT in a local .env file (untracked, so
+    # `git pull` never overwrites your choice). Defaults to 8888.
+    # The right-hand 8080 is the container's internal port — leave it.
     ports:
-      - "8080:8080"
+      - "${A2Z_PORT:-8888}:8080"
     environment:
-      # The real store to mirror. Swap for another and rebuild, e.g.
-      #   https://www.walmart.com  |  https://www.target.com  |  https://www.newegg.com
-      TARGET: "https://www.amazon.com"
+      # The real store to mirror (set TARGET in .env). Defaults to Amazon.
+      TARGET: "${TARGET:-https://www.amazon.com}"
     restart: unless-stopped

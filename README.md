@@ -30,6 +30,38 @@ AliExpress Affiliate, eBay, Best Buy) are not included — there is no
 legitimate keyless access to those catalogs. If you obtain keys, the
 `CATALOG_SOURCES` list in `app.js` is where a new source plugs in.
 
+## Browse the *real* Amazon, spend nothing: the store mirror 🪞
+
+This is the headline feature. The Docker container runs a small reverse proxy
+that serves the **real Amazon** (or another store) at your own address. It
+looks and behaves like Amazon — real catalog, real photos, real prices, real
+mobile layout, normal browsing with no extra clicks — but:
+
+- Every **Add to Cart** / **Buy Now** is intercepted and drops the product into
+  the **A to Zero** cart instead. Nothing is ever really purchased.
+- **Sign-in is neutralized** — you're never asked for an account, password, or
+  payment, and none are ever sent anywhere.
+- Real **cart / checkout** links route to the pretend cart, where you complete
+  the full $0.00 order → tracking → delivery → unboxing experience.
+- A slim bar pinned to the bottom of every page reminds you it's a simulation
+  and shows your pretend-cart count.
+
+Once it's running (see below), just open **http://localhost:8080** on your PC or
+phone and shop. That's it — no bookmarklet, no second tab, no separate link.
+
+**How to run it:** `docker compose up -d --build`, then browse
+`http://localhost:8080`. To mirror a different store, change `TARGET` in
+`compose.yaml` (e.g. `https://www.walmart.com`) and rebuild. The simulator on
+its own always lives at `http://localhost:8080/__a2z/`.
+
+**Honest limits:** big retailers actively fight proxied traffic with bot
+detection and CAPTCHAs, so mirroring can be flaky or get blocked — it works
+best from a home network and for casual browsing, not heavy sessions. When the
+mirror can't reach the store, the app falls back to the built-in + live-API
+catalog below, which always works. This is a personal, self-hosted tool for
+managing shopping urges; it reads only the pages you actively open and never
+collects data in bulk.
+
 ## Shop the real stores — spend nothing: the clipper 🔖
 
 The **➕ Add Any Product** page gives you a one-click bookmarklet. Browse the
@@ -140,7 +172,9 @@ your phone keeps its own cart, orders, and savings total.
 | `manifest.json` | PWA manifest ("Add to Home Screen" support)         |
 | `sw.js`         | Service worker for offline use                      |
 | `icon.svg`      | App icon                                            |
-| `Dockerfile`    | nginx container serving the app                     |
+| `mirror/server.js` | Reverse proxy: serves the real store + simulator |
+| `mirror/inject.js` | Interceptor injected into mirrored store pages   |
+| `Dockerfile`    | Node container running the mirror + app             |
 | `compose.yaml`  | One-command `docker compose up` setup               |
 
 ## Disclaimer

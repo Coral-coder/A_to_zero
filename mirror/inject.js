@@ -83,66 +83,99 @@
   function cartCount(st) { st = st || loadState(); var n = 0; for (var k in st.cart) n += st.cart[k]; return n; }
 
   /* ---------- intercepting real store actions ---------- */
+  function openCart() { location.href = "/__a2z/#/cart"; }
+  function openCheckout() { location.href = "/__a2z/#/checkout"; }
+  function openOrders() { location.href = "/__a2z/#/orders"; }
+
+  // Match by URL *path* (works whether the href is absolute or relative).
+  var CARTISH = /^\/(gp\/(cart|buy|sc)|cart|checkout|buy\b|gp\/aw\/c)/i;
+  var SIGNIN = /\/(ap\/signin|gp\/sign-in|gp\/flex\/sign|gp\/navigation\/redirector.*signin)/i;
+  var ORDERS = /\/(gp\/css\/order|gp\/your-account\/order|gp\/aw\/o|gp\/legacy\/order)/i;
+
+  // "Proceed to checkout" style controls (cart page, sidesheet, buy box).
+  var PTC_SEL = "#sc-buy-box-ptc-button,#hlb-ptc-btn-native,#attach-sidesheet-checkout-button," +
+    '[name="proceedToRetailCheckout"],[data-feature-id="proceed-to-checkout-action"],' +
+    '#turbo-checkout-pyo-button,#submitOrderButtonId';
+
   var BUY_ID_SEL = "#add-to-cart-button,#buy-now-button,#add-to-cart-button-ubb,#one-click-button," +
     '[name="submit.add-to-cart"],[name="submit.buy-now"],[name="submit.addToCart"],' +
     '[data-testid="add-to-cart"],[aria-labelledby*="add-to-cart"],[id*="add-to-cart"]';
-  var BUY_TEXT = /\b(add to (cart|basket|bag)|buy now|add to cart|1-click|buy it now|proceed to checkout)\b/i;
-  var STOP_LINKS = /\/(gp\/(cart|buy)|cart|checkout|buy)\b|\/ap\/signin|\/gp\/sign-in|signin|\/gp\/css\/order/i;
+  var BUY_TEXT = /\b(add to (cart|basket|bag)|buy now|buy it now|1-click)\b/i;
+
+  function label(el) { return (el.value || el.textContent || (el.getAttribute && el.getAttribute("aria-label")) || "").trim(); }
 
   function isBuy(el) {
     var n = el.closest ? el.closest(BUY_ID_SEL) : null;
     if (n) return n;
     var btn = el.closest ? el.closest('button,input[type="submit"],input[type="button"],a,[role="button"]') : null;
-    if (btn) {
-      var label = (btn.value || btn.textContent || btn.getAttribute("aria-label") || "").trim();
-      if (BUY_TEXT.test(label)) return btn;
-    }
+    if (btn && BUY_TEXT.test(label(btn))) return btn;
     return null;
   }
+  function isBuyNow(el) { return el.id === "buy-now-button" || /buy-now|buy\.now/i.test(el.name || "") || /\bbuy (now|it now)\b/i.test(label(el)); }
 
   function onClick(e) {
     var el = e.target;
-    if (!el || !el.closest) return;
-    // Sign-in / account links -> keep the user out of real auth entirely.
-    var signin = el.closest('a[href*="/ap/signin"],a[href*="signin"],#nav-link-accountList');
-    if (signin && !el.closest("#a2z-bar")) {
+    if (!el || !el.closest || el.closest("#a2z-bar")) return;
+
+    // 1. Add to Cart / Buy Now buttons.
+    var buy = isBuy(el);
+    if (buy) {
       e.preventDefault(); e.stopImmediatePropagation();
-      toast("🔒 No sign-in needed here — A to Zero never asks for accounts, passwords, or payment.");
+      addToCart(extract(buy));
+      if (isBuyNow(buy)) setTimeout(openCheckout, 350);
       return;
     }
-    // Real cart / checkout links -> send to the pretend cart instead.
-    var cartLink = el.closest("a");
-    if (cartLink && !el.closest("#a2z-bar")) {
-      var href = cartLink.getAttribute("href") || "";
-      if (STOP_LINKS.test(href)) {
+    // 2. Proceed-to-checkout controls -> pretend checkout.
+    if (el.closest(PTC_SEL)) {
+      e.preventDefault(); e.stopImmediatePropagation();
+      openCheckout();
+      return;
+    }
+    // 3. Top-bar / any nav link, matched by resolved path.
+    var a = el.closest("a[href]");
+    if (a) {
+      var p = a.pathname || "";
+      if (SIGNIN.test(p) || a.id === "nav-link-accountList" || a.id === "nav-signin") {
+        e.preventDefault(); e.stopImmediatePropagation();
+        toast("🔒 No sign-in needed here — A to Zero never asks for accounts, passwords, or payment.");
+        return;
+      }
+      if (ORDERS.test(p) || a.id === "nav-orders") {
+        e.preventDefault(); e.stopImmediatePropagation();
+        openOrders();
+        return;
+      }
+      if (CARTISH.test(p) || a.id === "nav-cart" || (a.closest && a.closest("#nav-cart"))) {
         e.preventDefault(); e.stopImmediatePropagation();
         openCart();
         return;
       }
     }
-    // Add to Cart / Buy Now.
-    var buy = isBuy(el);
-    if (buy && !el.closest("#a2z-bar")) {
-      e.preventDefault(); e.stopImmediatePropagation();
-      addToCart(extract(buy));
-      return;
-    }
   }
 
   function onSubmit(e) {
     var f = e.target;
-    var action = (f && f.getAttribute && f.getAttribute("action")) || "";
-    if (STOP_LINKS.test(action) || /add-to-cart|buy-now/i.test(action)) {
-      e.preventDefault(); e.stopImmediatePropagation();
-      addToCart(extract(f));
-    }
+    var action = "";
+    try { action = new URL(f.action, location.href).pathname; } catch (x) { action = (f.getAttribute && f.getAttribute("action")) || ""; }
+    if (CARTISH.test(action)) { e.preventDefault(); e.stopImmediatePropagation(); openCart(); return; }
+    if (/add-to-cart|buy-now|handle-buy-box/i.test(action)) { e.preventDefault(); e.stopImmediatePropagation(); addToCart(extract(f)); }
   }
 
   document.addEventListener("click", onClick, true);
   document.addEventListener("submit", onSubmit, true);
 
+  // Safety net: if we ever actually land on a real cart / checkout / sign-in /
+  // orders page (a click that slipped through, or a JS redirect), bounce to
+  // the pretend equivalent immediately — no flash of the real page.
+  function guardPath() {
+    var p = location.pathname || "";
+    if (SIGNIN.test(p)) { location.replace("/__a2z/#/"); return true; }
+    if (ORDERS.test(p)) { location.replace("/__a2z/#/orders"); return true; }
+    if (CARTISH.test(p)) { location.replace("/__a2z/#/cart"); return true; }
+    return false;
+  }
+
   /* ---------- floating A to Zero bar ---------- */
-  function openCart() { location.href = "/__a2z/#/cart"; }
 
   var bar, countEl;
   function buildBar() {
@@ -186,6 +219,9 @@
   }
 
   function escapeHtml(s) { return String(s).replace(/[&<>"']/g, function (c) { return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]; }); }
+
+  // Bounce off any real cart/checkout/sign-in page before drawing anything.
+  if (guardPath()) return;
 
   if (document.body) buildBar();
   else document.addEventListener("DOMContentLoaded", buildBar);
